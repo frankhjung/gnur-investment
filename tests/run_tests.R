@@ -4,9 +4,9 @@
 # Uses testthat when installed, or falls back to a minimal base-R testthat
 # compatibility shim so the suite executes cleanly inside gnur:4.5.2.
 
-#' @title Execute Stage 2 Test Suite via testthat or Base-R Shim
-#' @description Runs `tests/testthat/test-model.R` and halts with exit status
-#'   1 if any expectation fails or throws an unexpected error.
+#' @title Execute Stage 1 & Stage 2 Test Suite via testthat or Base-R Shim
+#' @description Runs all test files in `tests/testthat/` and halts with exit
+#'   status 1 if any expectation fails or throws an unexpected error.
 #' @return Invisibly returns the count of executed tests.
 #' @examples
 #' \dontrun{

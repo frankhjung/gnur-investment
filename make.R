@@ -33,7 +33,8 @@ if (endsWith(output_name, ".html")) {
       css = "assets/article.css",
       theme = NULL,
       highlight = NULL,
-      self_contained = TRUE
+      self_contained = TRUE,
+      mathjax = NULL
     ),
     output_file = output_name,
     output_dir = output_dir

@@ -193,13 +193,35 @@ script header comments.
 
 ### REQ-007: Prepared CSV Extraction (Stage 1)
 
-A dedicated GNU R extraction script (`scripts/convert_xlsx.R`) shall read the
-eight active raw inputs directly from `investment-analysis/files/raw-data/`—
-three `.xlsx` workbooks plus five raw CSVs (`f1.1-data.csv`, `f4-data.csv`,
-`f11-data.csv`, `g1-data.csv`, and `stw-dividends.csv`)—and write (overwriting
-any prior CSV extracts) clean, ascending-date, strictly typed UTF-8 **prepared
-CSVs** into `investment-analysis/files/` containing **only the columns required
-for this analysis**. Table 3 defines the exact conversion mapping.
+A modular GNU R extraction pipeline coordinated by `scripts/convert_xlsx.R`
+and organised by source family under `scripts/extract/` (`common.R`, `gold.R`,
+`rba.R`, and `stw.R`) shall read the eight active raw inputs directly from
+`data/raw/` (referred to historically below as
+`investment-analysis/files/raw-data/`)—three `.xlsx` workbooks plus five raw
+CSVs (`f1.1-data.csv`, `f4-data.csv`, `f11-data.csv`, `g1-data.csv`, and
+`stw-dividends.csv`)—and write (overwriting any prior CSV extracts) clean,
+ascending-date, strictly typed UTF-8 **prepared CSVs** into `data/` containing
+**only the columns required for this analysis**. Table 3 defines the exact
+conversion mapping.
+
+Stage 1 uses `readxl` (installed locally for Stage 1 workbook imports) alongside
+the shared Tidyverse packages (`dplyr`, `lubridate`, `purrr`, `readr`, and
+`tibble`) to eliminate custom XML parsing and repetitive boilerplate:
+
+- `readxl::read_excel()` inside `scripts/extract/common.R` replaces the earlier
+  custom `xml2` OOXML parser, reading `.xlsx` sheets into unnamed text matrices
+  so dynamic header lookups remain invariant.
+- `readr::parse_date()` (with `locale = readr::locale("en")`),
+  `lubridate::floor_date()`, `readr::parse_number()`, `readr::read_csv()` (for
+  rectangular `stw-dividends.csv`), `dplyr::bind_rows()`, `tibble::tribble()`,
+  and `purrr` functional helpers replace custom parsing and repetitive check
+  loops.
+- `utils::read.csv(..., fill = TRUE)` is retained in `read_rba_csv()` because
+  RBA statistical CSVs contain ragged short rows that emit `vroom` parsing
+  warnings under `readr::read_csv()`.
+- `utils::write.table()` is retained in `write_prepared_csv()` to preserve
+  exact base-R decimal output without IEEE-754 trailing digits introduced by
+  `readr::write_csv()`.
 
 | Source File(s) (`files/raw-data/`) | Target CSV File | Retained Columns | Extraction & Normalisation Rules |
 | :--- | :--- | :--- | :--- |
@@ -219,10 +241,11 @@ Stage 1.
 
 ### REQ-008: Stage 1 Extraction Verification Gate
 
-Immediately after writing (or overwriting) the prepared CSVs in
-`investment-analysis/files/`, `scripts/convert_xlsx.R` shall execute automated
-reconciliation assertions against the newly formatted CSVs and halt via
-`stop()` on any mismatch:
+Immediately after writing (or overwriting) the prepared CSVs in `data/`,
+`scripts/convert_xlsx.R` shall invoke the dataset-specific REQ-008 verifiers
+co-located inside `scripts/extract/gold.R`, `scripts/extract/rba.R`, and
+`scripts/extract/stw.R` (using declarative `tibble::tribble()` spot-check
+tables and `assert_spot_checks()`) and halt via `stop()` on any mismatch:
 
 1. **Row Count Parity:** `gold-prices.csv`, `rba-aud-usd.csv`,
    `rba-deposit-rates.csv`, and `rba-cash-rate.csv` each contain at least 250
@@ -254,42 +277,53 @@ reconciliation assertions against the newly formatted CSVs and halt via
 
 ### REQ-009: Idempotent Re-Runs and Stage Boundaries
 
-1. **Stage 1 Runs Locally:** `scripts/convert_xlsx.R` is an author-run step. It
-   is not part of the shared hard-linked `Makefile` or the GitHub pipeline, and
-   its R packages (for example `readxl`) need not exist in the CI container.
+1. **Stage 1 Runs Locally:** `scripts/convert_xlsx.R` and `scripts/extract/*.R`
+   form an author-run extraction stage invoked via `make extract` (or directly
+   via `Rscript scripts/convert_xlsx.R`). Stage 1 checks its dependencies via
+   `make check-packages-extract` (`--mode=extract`, including local-only
+   `readxl`), whereas Stage 2 and GitHub Actions CI check only reporting
+   dependencies via `make check-packages-render` (`--mode=render`, requiring no
+   Excel packages).
 2. **Read-Only Raw Sources & Idempotent Overwrite:** All original raw source
    files (three `.xlsx` workbooks, five raw CSVs `f1.1-data.csv`, `f4-data.csv`,
    `f11-data.csv`, `g1-data.csv`, `stw-dividends.csv`, companion `.docx` notes,
-   and `file-sources.md`) reside permanently in
-   `investment-analysis/files/raw-data/`. Stage 1 never moves, edits, or deletes
-   files inside `files/raw-data/`. Re-running `scripts/convert_xlsx.R` reads
-   directly from `files/raw-data/` and cleanly overwrites existing prepared
-   CSVs in `investment-analysis/files/`.
-3. **Committed Artefacts:** The prepared CSVs, `files/historical-events.csv`,
-   `files/raw-data/` (including `file-sources.md`), and `scripts/*.R` are
+   and `file-sources.md`) reside permanently in `data/raw/` (denoted
+   `files/raw-data/` in earlier specification drafts). Stage 1 never moves,
+   edits, or deletes files inside `data/raw/`. Re-running
+   `scripts/convert_xlsx.R` reads directly from `data/raw/` and cleanly
+   overwrites existing prepared CSVs in `data/`.
+3. **Committed Artefacts:** The prepared CSVs, `data/historical-events.csv`,
+   `data/raw/` (including `file-sources.md`), and `scripts/**/*.R` are
    committed to git, so a fresh checkout and the CI build render the article
    without running Stage 1 while preserving local Stage 1 reproducibility and
    full provenance.
 4. **Stage 2 Is Reporting:** Stage 2 renders [article.Rmd](../article.Rmd) with
-   `make` and `make pdf`, locally and in the GitHub pipeline
+   `make html` and `make pdf`, locally and in the GitHub pipeline
    (`ghcr.io/frankhjung/gnur:4.5.2`). [article.Rmd](../article.Rmd) sources
    `scripts/model.R`, reads only the prepared CSVs, and never reads `.xlsx`
-   files or `files/raw-data/`.
+   files or `data/raw/`.
 
 ```bash
-cd investment-analysis
 Rscript scripts/convert_xlsx.R  # Stage 1 (local): extract/overwrite CSVs
-make && make pdf                # Stage 2: render report from prepared CSVs
+make html && make pdf           # Stage 2: render report from prepared CSVs
 ```
 
 ```text
-investment-analysis/
+investments/
 ├── article.Rmd              # Stage 2: sources scripts/model.R, reads CSVs
 ├── scripts/
-│   ├── convert_xlsx.R       # Stage 1 (local): files/raw-data/ -> prepared CSVs
+│   ├── convert_xlsx.R       # Stage 1 coordinator: data/raw/ -> prepared CSVs
+│   ├── extract/             # Modular extractors & REQ-008 checks
+│   │   ├── common.R         # readxl reader, RBA CSV, date, writer & checks
+│   │   ├── gold.R           # Gold extractor & spot checks
+│   │   ├── rba.R            # RBA FX, deposits, CPI, cash rate extractors
+│   │   └── stw.R            # ASX:STW price & distribution extractors
 │   └── model.R              # Pure analysis functions sourced by article.Rmd
-└── files/
-    ├── raw-data/            # Permanent raw inputs (.xlsx, CSVs, .docx, file-sources.md)
+├── tests/testthat/
+│   ├── test-extract.R       # Stage 1 unit & REQ-008 verification tests
+│   └── test-model.R         # Stage 2 model unit & integration tests
+└── data/
+    ├── raw/                 # Permanent raw inputs (.xlsx, CSVs, .docx, file-sources.md)
     ├── historical-events.csv  # Hand-authored annotations
     └── *.csv                # Prepared CSVs written/overwritten by Stage 1
 ```
@@ -300,16 +334,16 @@ investment-analysis/
 flowchart LR
     subgraph STAGE1["Stage 1: Data Preparation (local, author-run GNU R)"]
         direction LR
-        RAW["Raw Inputs in files/raw-data/<br/>3 active XLSX workbooks,<br/>5 raw CSVs (f1.1, f4, f11, g1, stw),<br/>.docx notes, file-sources.md"]
-        S1["scripts/convert_xlsx.R<br/>Extract/overwrite prepared CSVs,<br/>verify checksums"]
-        CSV["Prepared CSVs in files/<br/>gold-prices.csv, rba-aud-usd.csv,<br/>rba-deposit-rates.csv, rba-cash-rate.csv,<br/>stw-prices.csv, stw-distributions.csv,<br/>abs-cpi.csv"]
+        RAW["Raw Inputs in data/raw/<br/>3 active XLSX workbooks,<br/>5 raw CSVs (f1.1, f4, f11, g1, stw),<br/>.docx notes, file-sources.md"]
+        S1["scripts/convert_xlsx.R + scripts/extract/*.R<br/>Extract/overwrite prepared CSVs,<br/>verify REQ-008 checksums"]
+        CSV["Prepared CSVs in data/<br/>gold-prices.csv, rba-aud-usd.csv,<br/>rba-deposit-rates.csv, rba-cash-rate.csv,<br/>stw-prices.csv, stw-distributions.csv,<br/>abs-cpi.csv"]
         RAW --> S1 --> CSV
     end
-    EVT["files/historical-events.csv<br/>(hand-authored)"]
+    EVT["data/historical-events.csv<br/>(hand-authored)"]
     subgraph STAGE2["Stage 2: Reporting (make / GitHub pipeline, gnur container)"]
         direction LR
         RMD["article.Rmd<br/>sources scripts/model.R,<br/>reads prepared CSVs only"]
-        OUT["Build Artefacts<br/>public/article.html<br/>public/investment-analysis.pdf"]
+        OUT["Build Artefacts<br/>public/index.html<br/>public/investments.pdf"]
         RMD --> OUT
     end
     CSV --> RMD
@@ -452,18 +486,21 @@ immediately via `stop()` if any of the following invariants fail:
 
 ### REQ-013: GNU R Code Quality Standards
 
-All R scripts (`scripts/convert_xlsx.R`, `scripts/model.R`) and R Markdown
-chunks in [article.Rmd](../article.Rmd) shall adhere to `gnur-programmer`
-standards:
+All R scripts (`scripts/convert_xlsx.R`, `scripts/extract/*.R`,
+`scripts/model.R`) and R Markdown chunks in [article.Rmd](../article.Rmd) shall
+adhere to `gnur-programmer` standards:
 
 - Tidyverse style with `snake_case` identifiers, 2-space indentation, native
   pipe `|>`, and comments hard-wrapped at 80 columns.
 - Pure, deterministic helper functions avoiding explicit `for`/`while` loops
-  where vectorisation or `purrr::accumulate()` / `Reduce()` applies.
-- Unit tests for every `scripts/model.R` function in `tests/testthat/`, run
-  locally, asserting the REQ-010 checkpoints (`AUD 6,998.18`, `AUD 6,791.20`,
-  `AUD 6,459.10`, `AUD 1,909.03`, `AUD 2,032.98`, `AUD 1,841.28`,
-  `AUD 1,630.82`, and the CPI ratio `1.71517`).
+  where vectorisation or `purrr::accumulate()` / `Reduce()` applies, with
+  explicit `io` dependency injection across Stage 1 modules instead of
+  `.GlobalEnv` mutation.
+- Unit tests for Stage 1 extraction modules (`tests/testthat/test-extract.R`)
+  and every `scripts/model.R` function (`tests/testthat/test-model.R`), run via
+  `make test`, asserting the REQ-008 checks and REQ-010 checkpoints
+  (`AUD 6,998.18`, `AUD 6,791.20`, `AUD 6,459.10`, `AUD 1,909.03`,
+  `AUD 2,032.98`, `AUD 1,841.28`, `AUD 1,630.82`, and the CPI ratio `1.71517`).
 - Static verification passing `lintr::lint()` cleanly without syntax or style
   warnings.
 
@@ -652,8 +689,8 @@ or Excel and `files/raw-data/` reads, and renders four publication-quality
 Before implementing `scripts/model.R` and chart chunks, inspect installed R
 packages inside
 `ghcr.io/frankhjung/gnur:4.5.2` (used by `.github/workflows/publish.yml`).
-Prefer standard packages (`ggplot2`, `dplyr`, `tidyr`, `readr`, `scales`,
-`knitr`). Provide clean `ggplot2::annotate()` label placement so charts build
+Prefer standard packages (`ggplot2`, `dplyr`, `readr`, `scales`, `knitr`).
+Provide clean `ggplot2::annotate()` label placement so charts build
 deterministically without relying on optional packages (`ggrepel`, `patchwork`)
 unless confirmed present in the image.
 
@@ -692,18 +729,20 @@ unless confirmed present in the image.
       five active raw CSVs `f1.1-data.csv`, `f4-data.csv`, `f11-data.csv`,
       `g1-data.csv`, and `stw-dividends.csv`, companion notes, and
       `file-sources.md`).
-- [x] Run `Rscript scripts/convert_xlsx.R` locally with its R packages
-      installed, reading from `files/raw-data/` and writing or overwriting all
-      seven prepared CSVs (including `files/rba-deposit-rates.csv`,
-      `files/rba-cash-rate.csv`, `files/stw-distributions.csv`, and
-      `files/abs-cpi.csv`) in `investment-analysis/files/`.
+- [x] Run `make extract` (`Rscript scripts/convert_xlsx.R` +
+      `scripts/extract/*.R`) locally with its R packages installed, reading from
+      `data/raw/` and writing or overwriting all seven prepared CSVs (including
+      `data/rba-deposit-rates.csv`, `data/rba-cash-rate.csv`,
+      `data/stw-distributions.csv`, and `data/abs-cpi.csv`) in `data/`.
 - [x] Pass all REQ-008 spot-check checksums and row-count assertions without
-      moving or modifying files in `files/raw-data/`, and confirm an immediate
-      re-run overwrites CSVs cleanly.
-- [x] Author `files/historical-events.csv` from REQ-014.
-- [ ] Commit the prepared CSVs, `files/historical-events.csv`, and
-      `scripts/*.R` so CI renders without running Stage 1.
-- [x] Pass `lintr::lint()` and the `tests/testthat/` suite for all scripts.
+      moving or modifying files in `data/raw/`, and confirm an immediate re-run
+      overwrites CSVs cleanly.
+- [x] Author `data/historical-events.csv` from REQ-014.
+- [ ] Commit the prepared CSVs, `data/historical-events.csv`, `scripts/*.R`,
+      `scripts/extract/*.R`, and `tests/testthat/test-extract.R` so CI renders
+      without running Stage 1.
+- [x] Pass `lintr::lint()` and the `tests/testthat/` suite (`make test`) for
+      all scripts.
 
 ### REQ-024: Stage 2 Reporting and Editorial Gate
 

@@ -50,23 +50,34 @@ investments/
 ├── public/                      # Gitignored rendered reports (index.html, PDF)
 ├── scripts/
 │   ├── check_packages.R         # Verifies required GNU R packages
-│   ├── convert_xlsx.R           # Stage 1 raw-to-CSV extractor & REQ-008 checks
+│   ├── convert_xlsx.R           # Stage 1 extraction & verification coordinator
+│   ├── extract/                 # Stage 1 modular extractors & REQ-008 checks
+│   │   ├── common.R             # Shared readxl, RBA CSV, date, IO & check helpers
+│   │   ├── gold.R               # World Bank CMO gold extractor & checks
+│   │   ├── rba.R                # RBA FX, deposit rates, CPI & cash rate
+│   │   └── stw.R                # ASX:STW price & distribution extractors
 │   └── model.R                  # Stage 2 pure financial model & validations
 └── tests/
     ├── run_tests.R              # Non-interactive test runner
-    └── testthat/test-model.R    # Unit and integration tests for model.R
+    └── testthat/
+        ├── test-extract.R       # Unit and integration tests for Stage 1
+        └── test-model.R         # Unit and integration tests for model.R
 ```
 
 ## Prerequisites
 
 - **GNU R** (4.1+ recommended for native pipe `|>`)
-- **Required CRAN packages:** `dplyr`, `ggplot2`, `knitr`, `lubridate`,
-  `purrr`, `readr`, `rmarkdown`, `scales`, `tibble`, `tidyr`, and `xml2`
+- **Stage 2 CRAN packages (rendering & CI):** `dplyr`, `ggplot2`, `knitr`,
+  `lubridate`, `purrr`, `readr`, `rmarkdown`, `scales`, and `tibble`
+- **Stage 1 CRAN packages (local extraction):** `readxl` (plus shared `dplyr`,
+  `lubridate`, `purrr`, `readr`, and `tibble`)
 - **Pandoc** (required by `rmarkdown` for HTML and PDF output)
 - **LaTeX** (`pdflatex` with `booktabs`, `fancyhdr`, `geometry`, `mathpazo`,
   `microtype`, `enumitem`, `caption`, and `hyperref` for PDF rendering)
 
-Verify that all required GNU R packages are installed before building:
+Verify that all required GNU R packages are installed before building (or use
+`make check-packages-render` / `make check-packages-extract` for stage-specific
+checks):
 
 ```bash
 make check-packages
@@ -83,9 +94,11 @@ make help
 | Target | Description |
 | :--- | :--- |
 | `make help` | List available targets and their descriptions. |
-| `make check-packages` | Verify all required GNU R packages are installed. |
-| `make extract` | Run `scripts/convert_xlsx.R` to rebuild prepared CSVs in `data/` from `data/raw/` and verify REQ-008 invariants. |
-| `make test` | Run unit and integration tests for `scripts/model.R`. |
+| `make check-packages` | Verify all Stage 1 and Stage 2 GNU R packages are installed. |
+| `make check-packages-extract` | Verify Stage 1 extraction GNU R packages are installed. |
+| `make check-packages-render` | Verify Stage 2 reporting GNU R packages are installed. |
+| `make extract` | Run `scripts/convert_xlsx.R` and `scripts/extract/*.R` to rebuild prepared CSVs in `data/` from `data/raw/` and verify REQ-008 invariants. |
+| `make test` | Run unit and integration tests for Stage 1 extraction and Stage 2 `scripts/model.R`. |
 | `make html` | Render `article.Rmd` to `public/index.html`. |
 | `make pdf` | Render `article.Rmd` to `public/investments.pdf`. |
 | `make all` | Run `extract`, `test`, `html`, and `pdf` in sequence. |
@@ -120,7 +133,7 @@ The workflow in [pages.yml](.github/workflows/pages.yml) runs automatically on
 pushes to `main` (and via manual `workflow_dispatch`). It uses the
 `ghcr.io/frankhjung/gnur:4.5.2` container to:
 
-1. Verify all required GNU R packages (`make check-packages`).
+1. Verify Stage 2 GNU R packages (`make check-packages-render`).
 2. Execute the model test suite (`make test`).
 3. Render the prepared CSVs in `data/` into `public/index.html` (`make html`).
 4. Upload `public/` and deploy it to GitHub Pages.

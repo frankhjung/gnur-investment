@@ -23,7 +23,6 @@ library(purrr)
 library(readr)
 library(scales)
 library(tibble)
-library(tidyr)
 
 source(file.path("scripts", "model.R"))
 model <- build_model_outputs("data")
@@ -1214,7 +1213,7 @@ Every figure in this report reproduces deterministically inside
 `scripts/model.R` from clean CSV extracts prepared in `data/`. Raw inputs and
 SHA-256 checksums remain archived in [the raw data source register][file-sources].
 
-| Prepared CSV (`data/`) | Upstream Publisher & Series ID | Retrieved | Canonical Source |
+| Prepared CSV | Upstream Publisher & Series ID | Retrieved | Canonical Source |
 | :--- | :--- | :--- | :--- |
 | `gold-prices.csv` | World Bank *Pink Sheet* (`Gold`, `Monthly Prices`, USD/troy oz) | `2026-11-20` | [World Bank CMO Monthly XLSX][wb-cmo-xlsx] |
 | `rba-aud-usd.csv` | RBA Table F11 & F11 Historical (`FXRUSD`, month-end AUD/USD) | `2026-11-20` | [RBA Table F11 CSV][rba-f11] & [1969--2009 XLS][rba-f11-hist] |

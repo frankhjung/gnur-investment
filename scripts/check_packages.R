@@ -22,10 +22,16 @@ required_packages <- function(mode = "all") {
     "readr",
     "rmarkdown",
     "scales",
-    "tibble",
-    "tidyr"
+    "tibble"
   )
-  extract_pkgs <- c("xml2")
+  extract_pkgs <- c(
+    "dplyr",
+    "lubridate",
+    "purrr",
+    "readr",
+    "readxl",
+    "tibble"
+  )
 
   switch(
     mode,
@@ -33,7 +39,10 @@ required_packages <- function(mode = "all") {
     render = sort(render_pkgs),
     extract = sort(extract_pkgs),
     stop(
-      sprintf("Invalid --mode '%s'. Expected one of: all, render, extract.", mode),
+      sprintf(
+        "Invalid --mode '%s'. Expected one of: all, render, extract.",
+        mode
+      ),
       call. = FALSE
     )
   )
@@ -52,7 +61,10 @@ parse_mode_arg <- function(args) {
   }
   mode_args <- args[startsWith(args, "--mode=")]
   if (length(mode_args) != 1L) {
-    stop("Usage: Rscript scripts/check_packages.R [--mode=all|render|extract]", call. = FALSE)
+    stop(
+      "Usage: Rscript scripts/check_packages.R [--mode=all|render|extract]",
+      call. = FALSE
+    )
   }
   sub("^--mode=", "", mode_args[[1L]])
 }
@@ -61,7 +73,8 @@ parse_mode_arg <- function(args) {
 #' @description Checks each required package via `requireNamespace()`, prints
 #'   installed versions, and aborts with an actionable `install.packages()`
 #'   command if any package is missing.
-#' @param mode Character scalar pipeline mode (`"all"`, `"render"`, `"extract"`).
+#' @param mode Character scalar pipeline mode (`"all"`, `"render"`, or
+#'   `"extract"`).
 #' @return Invisibly returns a named logical vector of package availability.
 #' @examples
 #' \dontrun{
@@ -89,15 +102,15 @@ verify_packages <- function(mode = "all") {
   missing_pkgs <- pkgs[!available]
   if (length(missing_pkgs) > 0L) {
     install_cmd <- sprintf(
-      'install.packages(c(%s))',
+      "install.packages(c(%s))",
       paste(sprintf('"%s"', missing_pkgs), collapse = ", ")
     )
+    msg_fmt <- paste0(
+      "Missing required GNU R package(s): %s\n",
+      "Install with:\n  Rscript -e '%s'"
+    )
     stop(
-      sprintf(
-        "Missing required GNU R package(s): %s\nInstall with:\n  Rscript -e '%s'",
-        paste(missing_pkgs, collapse = ", "),
-        install_cmd
-      ),
+      sprintf(msg_fmt, paste(missing_pkgs, collapse = ", "), install_cmd),
       call. = FALSE
     )
   }

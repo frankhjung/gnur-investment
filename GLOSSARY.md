@@ -91,10 +91,11 @@ period, without adjustment for inflation.
 
 ## Prepared CSV
 
-A UTF-8 CSV in `data/` written by `scripts/convert_xlsx.R`. It extracts the
-columns needed by this analysis from permanent read-only inputs in `data/raw/`,
-sorts them in ascending date order and replaces earlier extracts when rerun.
-The report reads these prepared files at render time.
+A UTF-8 CSV in `data/` written by `scripts/convert_xlsx.R` and its modular
+extractors in `scripts/extract/`. It extracts the columns needed by this
+analysis from permanent read-only inputs in `data/raw/`, sorts them in
+ascending date order and replaces earlier extracts when rerun. The report reads
+these prepared files at render time.
 
 ## Price-Only
 

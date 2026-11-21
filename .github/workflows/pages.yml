@@ -27,11 +27,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Verify packages, run tests, and render HTML
+      - name: Verify Stage 2 packages, run tests, and render HTML
         uses: docker://ghcr.io/frankhjung/gnur:4.5.2
         with:
           entrypoint: /usr/bin/make
-          args: check-packages test html
+          args: check-packages-render test html
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
