@@ -725,15 +725,215 @@ summarise_variant_row <- function(
   )
 }
 
+#' @title Compute Overlapping Rolling-Window Multipliers and CAGRs
+#' @description Evaluates all overlapping rolling investment windows of length
+#'   `horizons_years` (in integer years, `12 * h` months) across `wide_df` for
+#'   `gold_aud`, `gold_etf_040`, `stw_total_return`, and `fixed_interest_bonus`,
+#'   and flags 3-way gross and net-of-MER window winners.
+#' @param wide_df Audit `tibble` matching `asset_performance_wide` schema.
+#' @param horizons_years Integer vector of rolling window lengths in years
+#'   (default `c(5L, 10L, 15L)`).
+#' @return Tidy `tibble` containing one row per horizon, start month, and
+#'   evaluated `series_variant`, with `growth_multiplier`, `cagr_pct`,
+#'   `is_winner_gross`, and `is_winner_net`.
+#' @examples
+#' \dontrun{
+#' model <- build_model_outputs("data")
+#' rw <- compute_rolling_windows(model$asset_performance_wide)
+#' }
+compute_rolling_windows <- function(
+  wide_df,
+  horizons_years = c(5L, 10L, 15L)
+) {
+  series_cols <- c(
+    gold_aud = "gold_value_aud",
+    gold_etf_040 = "gold_etf_040_value_aud",
+    stw_total_return = "stw_tr_value_aud",
+    fixed_interest_bonus = "fixed_interest_value_aud"
+  )
+  req_cols <- c("date", unname(series_cols))
+  assert_true(
+    all(req_cols %in% names(wide_df)),
+    "wide_df is missing required columns for rolling-window analysis"
+  )
+
+  n_obs <- nrow(wide_df)
+  horizons_int <- as.integer(horizons_years)
+  assert_true(
+    length(horizons_int) >= 1L &&
+      !anyNA(horizons_int) &&
+      all(horizons_years == horizons_int) &&
+      all(horizons_int >= 1L) &&
+      all(horizons_int * 12L < n_obs),
+    "horizons_years must contain positive integers shorter than timeline"
+  )
+
+  purrr::map(unname(series_cols), function(col) {
+    assert_true(
+      all(wide_df[[col]] > 0),
+      sprintf(
+        "Column '%s' must remain strictly positive for rolling CAGRs",
+        col
+      )
+    )
+  })
+
+  variants <- names(series_cols)
+  gross_names <- c("gold_aud", "stw_total_return", "fixed_interest_bonus")
+  net_names <- c("gold_etf_040", "stw_total_return", "fixed_interest_bonus")
+
+  purrr::map(horizons_int, function(h) {
+    step <- h * 12L
+    idx_start <- seq_len(n_obs - step)
+    idx_end <- idx_start + step
+    start_dates <- wide_df$date[idx_start]
+    end_dates <- wide_df$date[idx_end]
+
+    mult_list <- purrr::map(variants, function(v) {
+      vals <- wide_df[[series_cols[[v]]]]
+      vals[idx_end] / vals[idx_start]
+    }) |>
+      stats::setNames(variants)
+
+    cagr_list <- purrr::map(mult_list, function(mult) {
+      (mult^(1 / h) - 1) * 100
+    })
+
+    gross_mat <- do.call(cbind, cagr_list[gross_names])
+    gross_winner <- gross_names[max.col(gross_mat, ties.method = "first")]
+
+    net_mat <- do.call(cbind, cagr_list[net_names])
+    net_winner <- net_names[max.col(net_mat, ties.method = "first")]
+
+    purrr::map(variants, function(var_name) {
+      tibble::tibble(
+        horizon_years = h,
+        window_index = idx_start,
+        start_date = start_dates,
+        end_date = end_dates,
+        series_variant = var_name,
+        growth_multiplier = mult_list[[var_name]],
+        cagr_pct = cagr_list[[var_name]],
+        is_winner_gross = if (var_name == "gold_etf_040") {
+          rep(NA, length(idx_start))
+        } else {
+          gross_winner == var_name
+        },
+        is_winner_net = if (var_name == "gold_aud") {
+          rep(NA, length(idx_start))
+        } else {
+          net_winner == var_name
+        }
+      )
+    }) |>
+      dplyr::bind_rows()
+  }) |>
+    dplyr::bind_rows()
+}
+
+#' @title Summarise Rolling-Window Win Rates and CAGR Distributions
+#' @description Aggregates output from `compute_rolling_windows()` across each
+#'   rolling horizon and `series_variant`, reporting window counts, 3-way gross
+#'   and net-of-MER win shares, and median/min/max CAGRs.
+#' @param rolling_df Tidy `tibble` returned by `compute_rolling_windows()`.
+#' @return `tibble` matching the `rolling_window_summary` `REQ-011` schema.
+#' @examples
+#' \dontrun{
+#' model <- build_model_outputs("data")
+#' rw_sum <- summarise_rolling_windows(
+#'   compute_rolling_windows(model$asset_performance_wide)
+#' )
+#' }
+summarise_rolling_windows <- function(rolling_df) {
+  req_cols <- c(
+    "horizon_years",
+    "window_index",
+    "start_date",
+    "end_date",
+    "series_variant",
+    "growth_multiplier",
+    "cagr_pct",
+    "is_winner_gross",
+    "is_winner_net"
+  )
+  assert_true(
+    all(req_cols %in% names(rolling_df)) && nrow(rolling_df) >= 1L,
+    "rolling_df must match compute_rolling_windows() schema and be non-empty"
+  )
+
+  horizons <- sort(unique(as.integer(rolling_df$horizon_years)))
+  variant_order <- c(
+    "gold_aud",
+    "gold_etf_040",
+    "stw_total_return",
+    "fixed_interest_bonus"
+  )
+  present_variants <- c(
+    intersect(variant_order, unique(rolling_df$series_variant)),
+    setdiff(unique(rolling_df$series_variant), variant_order)
+  )
+
+  purrr::map(horizons, function(h) {
+    purrr::map(present_variants, function(var_name) {
+      keep <- rolling_df$horizon_years == h &
+        rolling_df$series_variant == var_name
+      sub_df <- rolling_df[keep, , drop = FALSE]
+      n_win <- nrow(sub_df)
+      assert_true(
+        n_win >= 1L,
+        sprintf("No rolling windows found for horizon %d / %s", h, var_name)
+      )
+
+      win_gross <- if (all(is.na(sub_df$is_winner_gross))) {
+        NA_integer_
+      } else {
+        as.integer(sum(sub_df$is_winner_gross))
+      }
+      rate_gross <- if (is.na(win_gross)) {
+        NA_real_
+      } else {
+        win_gross / n_win * 100
+      }
+
+      win_net <- if (all(is.na(sub_df$is_winner_net))) {
+        NA_integer_
+      } else {
+        as.integer(sum(sub_df$is_winner_net))
+      }
+      rate_net <- if (is.na(win_net)) {
+        NA_real_
+      } else {
+        win_net / n_win * 100
+      }
+
+      tibble::tibble(
+        horizon_years = as.integer(h),
+        n_windows = as.integer(n_win),
+        series_variant = var_name,
+        win_count_gross = win_gross,
+        win_rate_gross_pct = rate_gross,
+        win_count_net = win_net,
+        win_rate_net_pct = rate_net,
+        median_cagr_pct = stats::median(sub_df$cagr_pct),
+        min_cagr_pct = min(sub_df$cagr_pct),
+        max_cagr_pct = max(sub_df$cagr_pct)
+      )
+    }) |>
+      dplyr::bind_rows()
+  }) |>
+    dplyr::bind_rows()
+}
+
 #' @title Build All Stage 2 In-Memory Analytical Data Contracts
 #' @description Reads prepared CSVs in `files_dir`, computes all nine monthly
 #'   wealth trajectories (`gold_aud`, Gold ETF sensitivities, Fixed Interest
-#'   models, `ASX:STW` DRP/Price-Only variants), after-tax ATO scenarios, and
-#'   validates every `REQ-011` output structure.
+#'   models, `ASX:STW` DRP/Price-Only variants), after-tax ATO scenarios,
+#'   rolling-window win rates, and validates every `REQ-011` output structure.
 #' @param files_dir Character scalar path to prepared CSV directory.
 #' @return Named list containing `asset_performance_monthly`,
-#'   `asset_performance_wide`, `historical_events`, `summary_metrics`, and
-#'   supplementary audit objects (`cpi_summary`, `stw_whole_unit`, `stw_tax`).
+#'   `asset_performance_wide`, `historical_events`, `summary_metrics`,
+#'   `rolling_window_summary`, and supplementary audit objects (`cpi_summary`,
+#'   `stw_whole_unit`, `stw_tax`).
 #' @examples
 #' \dontrun{
 #' model <- build_model_outputs("data")
@@ -897,11 +1097,15 @@ build_model_outputs <- function(files_dir = "data") {
     stw_price_value_aud = stw_px
   )
 
+  rolling_windows <- compute_rolling_windows(wide_audit)
+  rolling_window_summary <- summarise_rolling_windows(rolling_windows)
+
   list(
     asset_performance_monthly = monthly_long,
     asset_performance_wide = wide_audit,
     historical_events = inputs$historical_events,
     summary_metrics = summary_metrics,
+    rolling_window_summary = rolling_window_summary,
     cpi_summary = cpi_info,
     stw_whole_unit = list(
       end_units = stw_wu$units[[n_obs]],
@@ -935,7 +1139,8 @@ validate_model_outputs <- function(model) {
     "asset_performance_monthly",
     "asset_performance_wide",
     "historical_events",
-    "summary_metrics"
+    "summary_metrics",
+    "rolling_window_summary"
   )
   assert_true(
     all(req_top %in% names(model)),
@@ -946,6 +1151,7 @@ validate_model_outputs <- function(model) {
   wide <- model$asset_performance_wide
   events <- model$historical_events
   summary_df <- model$summary_metrics
+  rolling_df <- model$rolling_window_summary
 
   exp_monthly_cols <- c(
     "date", "asset_class", "series_variant",
@@ -1045,5 +1251,50 @@ validate_model_outputs <- function(model) {
     all(wide$stw_tr_value_aud >= wide$stw_price_value_aud - 1e-9),
     "STW Total Return must always equal or exceed Price-Only"
   )
+
+  exp_rolling_cols <- c(
+    "horizon_years", "n_windows", "series_variant",
+    "win_count_gross", "win_rate_gross_pct",
+    "win_count_net", "win_rate_net_pct",
+    "median_cagr_pct", "min_cagr_pct", "max_cagr_pct"
+  )
+  exp_rolling_variants <- c(
+    "gold_aud",
+    "gold_etf_040",
+    "stw_total_return",
+    "fixed_interest_bonus"
+  )
+  assert_true(
+    identical(names(rolling_df), exp_rolling_cols) && nrow(rolling_df) == 12L,
+    "rolling_window_summary schema or 12-row count mismatch"
+  )
+  assert_true(
+    !anyNA(rolling_df$median_cagr_pct) &&
+      !anyNA(rolling_df$min_cagr_pct) &&
+      !anyNA(rolling_df$max_cagr_pct) &&
+      all(rolling_df$min_cagr_pct <= rolling_df$median_cagr_pct + 1e-12) &&
+      all(rolling_df$median_cagr_pct <= rolling_df$max_cagr_pct + 1e-12),
+    "rolling_window_summary CAGR bounds or non-NA check failed"
+  )
+
+  exp_horizon_counts <- c("5" = 181L, "10" = 121L, "15" = 61L)
+  lapply(c(5L, 10L, 15L), function(h) {
+    exp_n <- exp_horizon_counts[[as.character(h)]]
+    h_df <- rolling_df[rolling_df$horizon_years == h, , drop = FALSE]
+    assert_true(
+      nrow(h_df) == 4L &&
+        setequal(h_df$series_variant, exp_rolling_variants) &&
+        all(h_df$n_windows == exp_n),
+      sprintf("Rolling window horizon %d count or variant check failed", h)
+    )
+    assert_true(
+      sum(h_df$win_count_gross, na.rm = TRUE) == exp_n &&
+        sum(h_df$win_count_net, na.rm = TRUE) == exp_n &&
+        abs(sum(h_df$win_rate_gross_pct, na.rm = TRUE) - 100) <= 1e-9 &&
+        abs(sum(h_df$win_rate_net_pct, na.rm = TRUE) - 100) <= 1e-9,
+      sprintf("Rolling window horizon %d win rates failed 100%% sum check", h)
+    )
+  })
+
   invisible(TRUE)
 }

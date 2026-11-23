@@ -211,3 +211,77 @@ test_that("Full 2006-2026 model checks all REQ-010 and REQ-017 values", {
     tolerance = 0.01
   )
 })
+
+test_that("compute_rolling_windows handles synthetic exact CAGRs and errors", {
+  dts <- seq.Date(as.Date("2020-07-01"), as.Date("2025-07-01"), by = "month")
+  n_obs <- length(dts)
+  wide_synth <- tibble::tibble(
+    date = dts,
+    gold_value_aud = 1000 * (1.10^(seq.int(0L, n_obs - 1L) / 12)),
+    gold_etf_040_value_aud = 1000 * (1.08^(seq.int(0L, n_obs - 1L) / 12)),
+    stw_tr_value_aud = 1000 * (1.09^(seq.int(0L, n_obs - 1L) / 12)),
+    fixed_interest_value_aud = 1000 * (1.04^(seq.int(0L, n_obs - 1L) / 12))
+  )
+
+  rw <- compute_rolling_windows(wide_synth, horizons_years = 5L)
+  expect_equal(nrow(rw), 4L)
+  rw_sum <- summarise_rolling_windows(rw)
+  expect_equal(rw_sum$n_windows, rep(1L, 4L))
+  expect_equal(
+    rw_sum$win_count_gross,
+    c(1L, NA_integer_, 0L, 0L)
+  )
+  expect_equal(
+    rw_sum$win_count_net,
+    c(NA_integer_, 0L, 1L, 0L)
+  )
+  expect_equal(rw_sum$median_cagr_pct, c(10, 8, 9, 4), tolerance = 1e-9)
+
+  expect_error(
+    compute_rolling_windows(wide_synth, horizons_years = 6L),
+    "shorter than timeline"
+  )
+})
+
+test_that("Rolling-window summary matches 5/10/15y counts and checkpoints", {
+  model <- build_model_outputs("data")
+  rw <- model$rolling_window_summary
+  expect_equal(nrow(rw), 12L)
+  expect_true(all(rw$min_cagr_pct <= rw$median_cagr_pct))
+  expect_true(all(rw$median_cagr_pct <= rw$max_cagr_pct))
+
+  rw_val <- function(horizon, variant, col) {
+    idx <- which(rw$horizon_years == horizon & rw$series_variant == variant)
+    rw[[col]][[idx]]
+  }
+
+  expect_equal(rw_val(5L, "gold_aud", "n_windows"), 181L)
+  expect_equal(rw_val(10L, "gold_aud", "n_windows"), 121L)
+  expect_equal(rw_val(15L, "gold_aud", "n_windows"), 61L)
+
+  expect_equal(rw_val(5L, "gold_aud", "win_count_gross"), 96L)
+  expect_equal(rw_val(5L, "stw_total_return", "win_count_gross"), 85L)
+  expect_equal(rw_val(5L, "fixed_interest_bonus", "win_count_gross"), 0L)
+  expect_equal(rw_val(5L, "gold_etf_040", "win_count_net"), 93L)
+  expect_equal(rw_val(5L, "stw_total_return", "win_count_net"), 88L)
+  expect_equal(rw_val(5L, "gold_aud", "win_rate_gross_pct"), 53.04, 0.01)
+
+  expect_equal(rw_val(10L, "gold_aud", "win_count_gross"), 62L)
+  expect_equal(rw_val(10L, "stw_total_return", "win_count_gross"), 59L)
+  expect_equal(rw_val(10L, "gold_etf_040", "win_count_net"), 55L)
+  expect_equal(rw_val(10L, "stw_total_return", "win_count_net"), 66L)
+  expect_equal(rw_val(10L, "stw_total_return", "win_rate_net_pct"), 54.55, 0.01)
+  expect_equal(rw_val(10L, "stw_total_return", "median_cagr_pct"), 7.91, 0.01)
+  expect_equal(rw_val(10L, "gold_aud", "median_cagr_pct"), 6.97, 0.01)
+  expect_equal(rw_val(10L, "gold_etf_040", "median_cagr_pct"), 6.54, 0.01)
+
+  expect_equal(rw_val(15L, "gold_aud", "win_count_gross"), 49L)
+  expect_equal(rw_val(15L, "stw_total_return", "win_count_gross"), 12L)
+  expect_equal(rw_val(15L, "gold_etf_040", "win_count_net"), 43L)
+  expect_equal(rw_val(15L, "stw_total_return", "win_count_net"), 18L)
+  expect_equal(rw_val(15L, "gold_aud", "win_rate_gross_pct"), 80.33, 0.01)
+
+  broken <- model
+  broken$rolling_window_summary$win_count_gross[[1L]] <- 999L
+  expect_error(validate_model_outputs(broken), "100% sum check")
+})

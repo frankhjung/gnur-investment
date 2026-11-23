@@ -33,6 +33,15 @@ Compound annual growth rate. CAGR describes the constant annual rate that
 connects a starting investment value to its ending investment value over a
 specified period.
 
+## Cash Rate Benchmark
+
+The secondary fixed-interest reference series that compounds the Reserve Bank of
+Australia monthly Cash Rate Target (`FIRMMCRT`). It represents an official
+monetary-policy benchmark rather than a retail product or guaranteed deposit
+floor.
+
+_Avoid_: RBA Cash Rate Floor
+
 ## CGT
 
 Capital gains tax. For eligible Australian individuals, CGT applies to a capital
@@ -112,6 +121,12 @@ June 2006 Australian dollars.
 
 The Reserve Bank of Australia, which publishes official cash-rate, deposit-rate
 and exchange-rate data used in this analysis.
+
+## Rolling Window
+
+A fixed-duration sub-period (5, 10, or 15 years) stepped forward one month at a
+time across the 241-month Analysis Window. Rolling windows test whether headline
+point-to-point results depend on a specific entry or exit date.
 
 ## Total Return
 

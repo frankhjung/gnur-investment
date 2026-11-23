@@ -29,6 +29,7 @@ model <- build_model_outputs("data")
 validate_model_outputs(model)
 
 sm <- model$summary_metrics
+rw_sum <- model$rolling_window_summary
 monthly <- model$asset_performance_monthly
 wide <- model$asset_performance_wide
 events <- model$historical_events
@@ -37,6 +38,13 @@ wu_sum <- model$stw_whole_unit
 
 row_metric <- function(variant, col) {
   sm[[col]][[which(sm$series_variant == variant)]]
+}
+
+rw_metric <- function(horizon, variant, col) {
+  idx <- which(
+    rw_sum$horizon_years == horizon & rw_sum$series_variant == variant
+  )
+  rw_sum[[col]][[idx]]
 }
 
 fmt_aud <- function(x, digits = 2L) {
@@ -113,9 +121,12 @@ gold_mdd <- row_metric("gold_aud", "max_drawdown_pct")
 gold_vol <- row_metric("gold_aud", "annual_volatility_pct")
 
 gold_015_end <- row_metric("gold_etf_015", "end_value_nominal_aud")
+gold_015_cagr <- row_metric("gold_etf_015", "cagr_pct")
 gold_040_end <- row_metric("gold_etf_040", "end_value_nominal_aud")
+gold_040_cagr <- row_metric("gold_etf_040", "cagr_pct")
 
 stw_tr_end <- row_metric("stw_total_return", "end_value_nominal_aud")
+stw_32_nom <- row_metric("stw_total_return", "after_tax_32_nominal_aud")
 stw_tr_real <- row_metric("stw_total_return", "end_value_real_aud")
 stw_tr_cagr <- row_metric("stw_total_return", "cagr_pct")
 stw_tr_mdd <- row_metric("stw_total_return", "max_drawdown_pct")
@@ -158,15 +169,43 @@ wu_res_cash <- wu_sum$residual_cash_aud
 wu_end_val <- wu_sum$end_value_aud
 wu_gap <- wu_sum$gap_vs_fractional_aud
 wu_gap_pct <- wu_gap / wu_frac_end * 100
+
+rw_5_gold_rate <- rw_metric(5L, "gold_aud", "win_rate_gross_pct")
+rw_5_gold_cnt <- rw_metric(5L, "gold_aud", "win_count_gross")
+rw_5_stw_rate <- rw_metric(5L, "stw_total_return", "win_rate_gross_pct")
+rw_5_stw_cnt <- rw_metric(5L, "stw_total_return", "win_count_gross")
+rw_5_net_gold_rate <- rw_metric(5L, "gold_etf_040", "win_rate_net_pct")
+rw_5_net_stw_rate <- rw_metric(5L, "stw_total_return", "win_rate_net_pct")
+
+rw_10_gold_rate <- rw_metric(10L, "gold_aud", "win_rate_gross_pct")
+rw_10_gold_cnt <- rw_metric(10L, "gold_aud", "win_count_gross")
+rw_10_stw_rate <- rw_metric(10L, "stw_total_return", "win_rate_gross_pct")
+rw_10_stw_cnt <- rw_metric(10L, "stw_total_return", "win_count_gross")
+rw_10_net_gold_rate <- rw_metric(10L, "gold_etf_040", "win_rate_net_pct")
+rw_10_net_gold_cnt <- rw_metric(10L, "gold_etf_040", "win_count_net")
+rw_10_net_stw_rate <- rw_metric(10L, "stw_total_return", "win_rate_net_pct")
+rw_10_net_stw_cnt <- rw_metric(10L, "stw_total_return", "win_count_net")
+rw_10_gold_med <- rw_metric(10L, "gold_aud", "median_cagr_pct")
+rw_10_net_gold_med <- rw_metric(10L, "gold_etf_040", "median_cagr_pct")
+rw_10_stw_med <- rw_metric(10L, "stw_total_return", "median_cagr_pct")
+
+rw_15_gold_rate <- rw_metric(15L, "gold_aud", "win_rate_gross_pct")
+rw_15_stw_rate <- rw_metric(15L, "stw_total_return", "win_rate_gross_pct")
+rw_15_net_gold_rate <- rw_metric(15L, "gold_etf_040", "win_rate_net_pct")
+rw_15_net_stw_rate <- rw_metric(15L, "stw_total_return", "win_rate_net_pct")
 ```
 
 Put AUD 1,000 into three everyday Australian asset classes in July 2006, walk
-away for twenty years, and return in July 2026. On a gross pre-tax basis, spot
+away for twenty years, and return in July 2026. Before personal tax, gross spot
 gold finishes ahead at **`r fmt_aud(gold_end)`** (`r fmt_pct(gold_cagr)` p.a.),
-Australian shares via the SPDR S&P/ASX 200 Fund (`ASX:STW`) with reinvested
-distributions reach **`r fmt_aud(stw_tr_end)`** (`r fmt_pct(stw_tr_cagr)`
-p.a.), and retail bonus savings accounts rolled over annually grow to
-**`r fmt_aud(fi_end)`** (`r fmt_pct(fi_cagr)` p.a.).
+corresponding to **`r fmt_aud(gold_015_end)`** (`r fmt_pct(gold_015_cagr)`
+p.a.) after a `0.15%` p.a. Gold ETF fee or **`r fmt_aud(gold_040_end)`**
+(`r fmt_pct(gold_040_cagr)` p.a.) at `0.40%` p.a. Australian shares via the SPDR
+S&P/ASX 200 Fund (`ASX:STW`) with reinvested distributions reach
+**`r fmt_aud(stw_tr_end)`** (`r fmt_pct(stw_tr_cagr)` p.a., already net of State
+Street's fund MER deducted inside daily Net Asset Value), and retail bonus
+savings accounts rolled over annually grow to **`r fmt_aud(fi_end)`**
+(`r fmt_pct(fi_cagr)` p.a.).
 
 Those headline numbers flip several intuitive assumptions once fees, dividends,
 inflation, and Australian tax enter the frame. Leave dividends uninvested and
@@ -222,7 +261,7 @@ variant_labels <- c(
   stw_price_only = "ASX:STW Price-Only (No Dividends)",
   fixed_interest_td_1y = "Fixed Interest (1-Year Term Deposit)",
   fixed_interest_bonus = "Fixed Interest (Bonus Savings Rollover)",
-  fixed_interest_cash = "Fixed Interest (RBA Cash Rate Floor)"
+  fixed_interest_cash = "Fixed Interest (RBA Cash Rate Benchmark)"
 )
 
 headline_df <- tibble(series_variant = headline_variants) |>
@@ -241,11 +280,16 @@ kable(
   align = c("l", "r", "r", "r", "r", "r"),
   caption = paste(
     "Performance of AUD 1,000 invested from July 2006 to July 2026",
-    "(all dollar values in AUD, pre-tax; Real column deflated to constant",
-    "June 2006 AUD via ABS CPI)."
+    "(all dollar values in AUD, pre-tax; STW figures reinvest cash",
+    "distributions excluding franking credits; Real column deflated to",
+    "constant June 2006 AUD via ABS CPI)."
   )
 )
 ```
+
+Pre-tax `ASX:STW` figures in Table 1 and Charts 1--3 reinvest cash
+distributions only and exclude franking credits; Table 4 incorporates franking
+credit offsets alongside personal tax rates and capital gains tax (CGT).
 
 Three structural findings jump straight off Table 1:
 
@@ -272,12 +316,23 @@ by the full history of the `ASX:STW` monthly price series):
 1. **Single Currency:** All valuations sit in nominal Australian dollars (AUD).
    World Bank USD gold spot prices convert monthly into AUD via official RBA
    Table F11 `AUD/USD` exchange rates (`FXRUSD`: `gold_usd / aud_usd`).
-2. **Identical Horizon:** Every series begins at exactly AUD 1,000.00 in July
-   2006 (`2006-07-01`) and closes in July 2026 (`2026-07-01`).
-3. **Reinvestment Parity:** Zero-yield Gold (price growth alone) is compared
-   against compounded Fixed Interest and reinvested-distribution Equities
-   (`ASX:STW` Total Return on a Fractional Cash Dividend Reinvestment Plan,
-   or DRP, alongside a practical Whole-Unit DRP sensitivity).
+2. **Identical Horizon & July 2026 Cut-Off:** Every series begins at exactly
+   AUD 1,000.00 in July 2006 (`2006-07-01`) and closes in July 2026
+   (`2026-07-01`). Even though this report is published later in 2026, ending
+   in July 2026 is dictated by three fixed data boundaries: the `241`-month
+   `ASX:STW` price extract, the exact `20`-term (`1 + 12 * 20`) July-to-July
+   annual deposit rollover structure, and the uninterpolated June 2006 to June
+   2026 quarterly ABS CPI window. Gold also pulled back further from its
+   early-2026 peak later in 2026, underscoring why endpoint timing matters.
+3. **Reinvestment Parity & Domestic Market Scope:** Zero-yield Gold (price
+   growth alone) is compared against compounded Fixed Interest and
+   reinvested-distribution Equities (`ASX:STW` Total Return on a Fractional Cash
+   Dividend Reinvestment Plan, or DRP, alongside a practical Whole-Unit DRP
+   sensitivity). Note that `ASX:STW` tests a single domestic equity market
+   heavily concentrated in mature, high-payout Australian banks and resource
+   miners rather than unhedged global growth equities (such as MSCI World or
+   the S&P 500), whereas unhedged AUD gold absorbs AUD weakness during global
+   crises.
 4. **Transparent Boundary Disclosures:** Primary charts display nominal pre-tax
    AUD values so readers can separate raw market returns from fund Management
    Expense Ratios (MER), personal marginal tax rates, and inflation.
@@ -290,17 +345,29 @@ upfront so readers understand exact boundary assumptions:
 - **Gold (`gold_aud`, `gold_etf_015`, `gold_etf_040`):** World Bank *Pink
   Sheet* monthly prices represent daily-average spot (formerly London afternoon
   fixing monthly mean) in USD per troy ounce, converted using RBA Table F11
-  month-end `FXRUSD` exchange rates. Net-of-MER sensitivities apply continuous
-  fee drag `V_t * (1 - MER)^(t / 12)` at `0.15%` p.a. (`ASX:PMGOLD`) and
-  `0.40%` p.a. (`ASX:GOLD`).
+  month-end `FXRUSD` exchange rates. Because monthly averaging smooths a series
+  relative to month-end closes, monthly changes of an averaged random walk
+  retain roughly two-thirds of true point-to-point variance (reducing measured
+  variance by roughly one-third). Gold's `15.55%` annualised volatility
+  therefore corresponds to roughly `~19%` on a month-end point-to-point basis,
+  and intra-month peaks and drawdowns appear slightly shallower than on a
+  month-end equity series. Net-of-MER sensitivities apply continuous fee drag
+  `V_t * (1 - MER)^(t / 12)` at `0.15%` p.a. (`ASX:PMGOLD`) and `0.40%` p.a.
+  (`ASX:GOLD`).
 - **Fixed Interest (`fixed_interest_bonus`, `fixed_interest_td_1y`,
   `fixed_interest_cash`):** Monthly advertised rates from RBA Table F4
   (`FRDIRSAB10K` bonus savings for AUD 10,000 balances and `FRDIRBTD10K1Y`
   1-year term deposits) apply via **Annual Rollover**. At each July from 2006
   to 2025 (`20` twelve-month terms), July's rate is locked for 12 months,
   accruing linearly intra-year and compounding principal plus interest at each
-  July maturity. RBA Table F1.1 monthly average Cash Rate Target (`FIRMMCRT`)
-  provides a monthly-compounded policy floor.
+  July maturity. Locking annual rates sets intra-year drawdowns to `0.0%` by
+  construction (so the `0.44%` annualised volatility reflects annual
+  step-changes between July locks) and lags mid-year variable rate rises such
+  as the 2022--2023 tightening cycle. Moreover, `3.29%` p.a. represents an
+  optimistic upper bound for a passive investor who might miss monthly bonus
+  conditions and revert to base rates (`~0.05%--0.50%`). RBA Table F1.1 monthly
+  average Cash Rate Target (`FIRMMCRT`) provides a monthly-compounded
+  monetary-policy benchmark (`RBA Cash Rate Benchmark`).
 - **Australian Equities (`ASX:STW`):** Monthly bar closes from Investing.com
   Australia (`AUD 49.19` in July 2006, open `AUD 50.00`, to `AUD 80.22` in July
   2026; `0.106%` mean absolute spread across all `241` months versus official
@@ -318,12 +385,15 @@ upfront so readers understand exact boundary assumptions:
   costing AUD 1,000 in June 2006 requires **`r fmt_aud(cpi_breakeven)`** in
   June 2026.
 
-> **Verification Caveat on `ASX:STW` Franking:** Cross-checking our `62`-row
-> distribution schedule against SSGA's official 2014--2026 table confirms
-> `46 / 46` exact matches on cash payouts and payment dates. Headline franking
-> percentages differ on `17` rows (most notably `2019-06-27`, shown at `0.00%`
-> headline franking versus `AUD 0.1923` per-unit franking credits published by
-> SSGA), which slightly understates `ASX:STW` after-tax franking offsets.
+> **Verification Caveat on `ASX:STW` Franking:** Cross-checking our
+> distribution schedule against SSGA's official distribution table covers the
+> `46` distributions from June 2014 onwards: cash payouts and payment dates
+> match `46 / 46` exactly, while `17 / 46` checked rows (over one-third,
+> notably `2019-06-27` recorded at `0.00%` franking versus `AUD 0.1923` per
+> unit on SSGA) differ on headline franking. The `14` earlier in-window
+> distributions (`2006--2013`) rely solely on the InvestSMART schedule and are
+> not cross-checked against SSGA, making Table 4's `ASX:STW` after-tax results
+> (`r fmt_aud(stw_32_nom)` at `32%`) a conservative lower bound.
 
 ## Twenty Years of Performance (2006--2026)
 
@@ -615,7 +685,7 @@ deposits in Fixed Interest, and Fractional vs Whole-Unit DRP execution in
 ```{r chart3-small-multiples, fig.width=9, fig.height=8.6, fig.cap="Chart 3: Asset-class small multiples detailing Gold ETF MER drag and USD parity divergence, Fixed Interest benchmarks, and ASX:STW DRP execution."}
 facet_levels <- c(
   "Gold: AUD Spot, Gold ETF MER Band and Indexed USD Gold",
-  "Fixed Interest: Bonus Savings, 1-Year Term Deposit & Cash Floor",
+  "Fixed Interest: Bonus Savings, 1-Year Term Deposit & Cash Rate Benchmark",
   "Australian Equities (ASX:STW): Fractional DRP, Whole-Unit DRP & Price-Only"
 )
 
@@ -645,7 +715,11 @@ fi_panel <- tibble(
   date = rep(wide$date, times = 3L),
   facet = factor(facet_levels[[2L]], levels = facet_levels),
   series = rep(
-    c("1-Year Term Deposit", "Bonus Savings Rollover", "RBA Cash Rate Floor"),
+    c(
+      "1-Year Term Deposit",
+      "Bonus Savings Rollover",
+      "RBA Cash Rate Benchmark"
+    ),
     each = nrow(wide)
   ),
   value_aud = c(
@@ -690,7 +764,7 @@ sm_colours <- c(
   "USD Gold Index" = "#7f8c8d",
   "1-Year Term Deposit" = "#1f5a4d",
   "Bonus Savings Rollover" = "#2e7d6b",
-  "RBA Cash Rate Floor" = "#5c9e8f",
+  "RBA Cash Rate Benchmark" = "#5c9e8f",
   "STW Fractional DRP" = "#1771ad",
   "STW Whole-Unit DRP" = "#4596cc",
   "STW Price-Only" = "#7f8c8d"
@@ -703,7 +777,7 @@ sm_linetypes <- c(
   "USD Gold Index" = "dotted",
   "1-Year Term Deposit" = "dashed",
   "Bonus Savings Rollover" = "solid",
-  "RBA Cash Rate Floor" = "dotted",
+  "RBA Cash Rate Benchmark" = "dotted",
   "STW Fractional DRP" = "solid",
   "STW Whole-Unit DRP" = "dotted",
   "STW Price-Only" = "dashed"
@@ -719,12 +793,16 @@ sm_end_labels <- sm_df |>
       "USD Gold Index" = "USD Gold",
       "1-Year Term Deposit" = "1-Yr TD",
       "Bonus Savings Rollover" = "Bonus Sav.",
-      "RBA Cash Rate Floor" = "Cash Rate",
+      "RBA Cash Rate Benchmark" = "Cash Rate",
       "STW Fractional DRP" = "Frac. DRP",
       "STW Whole-Unit DRP" = "Whole-Unit",
       "STW Price-Only" = "Price-Only"
     )[.data$series],
-    label_txt = sprintf("%s: %s", .data$short_tag, fmt_aud(.data$value_aud, 0L)),
+    label_txt = sprintf(
+      "%s: %s",
+      .data$short_tag,
+      fmt_aud(.data$value_aud, 0L)
+    ),
     y_pos = case_when(
       .data$series == "Gold Spot (AUD)" ~ 8250,
       .data$series == "PMGOLD (0.15% MER)" ~ 6850,
@@ -732,7 +810,7 @@ sm_end_labels <- sm_df |>
       .data$series == "USD Gold Index" ~ 4100,
       .data$series == "1-Year Term Deposit" ~ 2090,
       .data$series == "Bonus Savings Rollover" ~ 1880,
-      .data$series == "RBA Cash Rate Floor" ~ 1660,
+      .data$series == "RBA Cash Rate Benchmark" ~ 1660,
       .data$series == "STW Fractional DRP" ~ 4180,
       .data$series == "STW Whole-Unit DRP" ~ 3420,
       .data$series == "STW Price-Only" ~ 1631,
@@ -744,7 +822,12 @@ tier2_bands <- tibble(
   xmin = as.Date(c("2010-10-01", "2013-04-01", "2013-04-01", "2016-06-01")),
   xmax = as.Date(c("2011-08-01", "2015-12-01", "2015-12-01", "2016-06-01")),
   facet = factor(
-    c(facet_levels[[1L]], facet_levels[[1L]], facet_levels[[2L]], facet_levels[[3L]]),
+    c(
+      facet_levels[[1L]],
+      facet_levels[[1L]],
+      facet_levels[[2L]],
+      facet_levels[[3L]]
+    ),
     levels = facet_levels
   )
 )
@@ -1017,14 +1100,103 @@ kable(
 )
 ```
 
-Spot gold suffered nearly the same annualised monthly volatility
-(`r fmt_pct(gold_vol)`) as `ASX:STW` Total Return (`r fmt_pct(stw_tr_vol)`),
-though gold's steepest peak-to-trough fall (`r fmt_pct(gold_mdd)` ending June
-2014) was roughly half the severity of equities during the Global Financial
-Crisis (`r fmt_pct(stw_tr_mdd)` on Total Return and `r fmt_pct(stw_px_mdd)` on
-Price-Only in February 2009). Even after hitting new nominal records in
-`r gold_aud_peak_date`, gold pulled back `r fmt_pct(abs(gold_2026_dd), 1L)` by
-July 2026.
+Spot gold recorded **`r fmt_pct(gold_vol)`** annualised volatility from monthly
+World Bank prices compared with **`r fmt_pct(stw_tr_vol)`** for `ASX:STW` Total
+Return. Because World Bank gold prices average daily fixes across the month,
+random-walk return variance shrinks by roughly one-third; true point-to-point
+month-end gold volatility sits nearer `~19%` p.a., and intra-month drawdowns
+were deeper than monthly averages show. Gold's steepest recorded monthly
+pullback (`r fmt_pct(gold_mdd)` ending June 2014) was roughly half the depth of
+equities during the Global Financial Crisis (`r fmt_pct(stw_tr_mdd)` on Total
+Return and `r fmt_pct(stw_px_mdd)` on Price-Only in February 2009), and even
+after hitting nominal records in `r gold_aud_peak_date`, spot gold fell
+`r fmt_pct(abs(gold_2026_dd), 1L)` to July 2026. Fixed Interest's `0.0%`
+maximum drawdown and `0.44%` annualised volatility stem by construction from
+locking July deposit rates for twelve months rather than marking bond duration
+or daily rate changes to market.
+
+### Endpoint Sensitivity: Rolling 5-, 10- and 15-Year Windows
+
+A single twenty-year comparison can flatter whichever asset rallied right
+before the cut-off date. Measuring every overlapping `5`-, `10`- and `15`-year
+window inside our `241`-month history tests how often each asset wins when
+investors start at different points in the cycle.
+
+```{r rolling-window-table}
+rw_labels <- c(
+  gold_aud = "Gold (AUD Spot, Gross)",
+  gold_etf_040 = "Gold ETF (0.40% MER)",
+  stw_total_return = "ASX:STW Total Return",
+  fixed_interest_bonus = "Fixed Interest (Bonus)"
+)
+
+fmt_win <- function(rate, cnt) {
+  ifelse(is.na(rate), "--", sprintf("%.1f%% (%d)", rate, cnt))
+}
+
+rw_df <- rw_sum |>
+  transmute(
+    Horizon = sprintf("%d yr", .data$horizon_years),
+    Windows = as.integer(.data$n_windows),
+    Benchmark = unname(rw_labels[.data$series_variant]),
+    `Gross Win` = fmt_win(.data$win_rate_gross_pct, .data$win_count_gross),
+    `Net Win` = fmt_win(.data$win_rate_net_pct, .data$win_count_net),
+    `Med. CAGR` = fmt_pct(.data$median_cagr_pct),
+    `Range CAGR` = sprintf(
+      "%s to %s",
+      fmt_pct(.data$min_cagr_pct),
+      fmt_pct(.data$max_cagr_pct)
+    )
+  )
+
+kable(
+  rw_df,
+  align = c("l", "r", "l", "r", "r", "r", "r"),
+  caption = paste(
+    "Overlapping rolling-window performance across July 2006 to July 2026",
+    "(Gross Win compares Gold AUD Spot, ASX:STW Total Return and Bonus",
+    "Savings; Net Win substitutes a 0.40% p.a. MER Gold ETF against ASX:STW",
+    "and Bonus Savings)."
+  )
+)
+```
+
+Three clear lessons emerge from those `363` overlapping holding periods:
+
+- **Ten-year horizons hinge on gold's fee drag:** Across `181` five-year
+  windows, gross spot gold edges `ASX:STW` Total Return
+  (`r fmt_pct(rw_5_gold_rate, 1L)` vs `r fmt_pct(rw_5_stw_rate, 1L)`;
+  `r fmt_pct(rw_5_net_gold_rate, 1L)` vs `r fmt_pct(rw_5_net_stw_rate, 1L)`
+  net of `0.40%` ETF MER). Across `121` ten-year windows, however, `ASX:STW`
+  delivers a higher median annualised return
+  (`r fmt_pct(rw_10_stw_med)` vs `r fmt_pct(rw_10_gold_med)` gross spot gold
+  and `r fmt_pct(rw_10_net_gold_med)` net Gold ETF) and wins the majority of
+  ten-year windows (`r fmt_pct(rw_10_net_stw_rate, 1L)`, `r rw_10_net_stw_cnt`
+  of `121` start months vs `r fmt_pct(rw_10_net_gold_rate, 1L)` for the
+  `0.40%` MER Gold ETF). Fixed interest never once beat both growth assets over
+  any `5`-, `10`- or `15`-year window (`0.0%`). Only across `15`-year windows
+  (`61` start months)--every one of which includes the post-2020 pandemic and
+  2024--2026 central-bank gold surges--does gold surge to
+  `r fmt_pct(rw_15_gold_rate, 1L)` gross (`r fmt_pct(rw_15_net_gold_rate, 1L)`
+  net) win rates.
+- **Entry regime dictates long-horizon patience:** An investor buying AUD gold
+  near its August 2011 peak (`AUD 1,987` indexed) endured roughly eight flat
+  years through 2018--2019 while reinvested equity dividends caught up and
+  briefly took the lead. Looking further back before 2006 reinforces that regime
+  risk: from gold's January 1980 USD peak (`~USD 850/oz`, a nominal level not
+  reclaimed in USD terms until 2008) through 2000, bullion lost roughly
+  two-thirds of its nominal USD price while reinvested equities compounded
+  strongly.
+- **Why an unproductive asset won 2006--2026:** Unlike equities or bank
+  deposits, gold pays zero interest, rent or earnings. Yet an unhedged AUD
+  ounce rose nearly sevenfold over 2006--2026 because monetary expansion,
+  sovereign-debt concerns and central-bank reserve buying repriced bullion
+  higher in USD while the Australian dollar weakened overall (`0.7658` to
+  `0.7030`, with sharper crisis drops cushioning GFC drawdowns). Under
+  Australian tax rules, that capital appreciation also enjoyed zero annual tax
+  drag for twenty years before a single 50%-discounted CGT event on sale,
+  whereas deposit interest and reinvested distributions faced annual tax
+  assessment.
 
 ## Owning Each Asset in Australia: Fees, Tax and Friction
 
@@ -1036,8 +1208,8 @@ and day-to-day compounding mechanics.
 | :------------------- | :----------------------- | :----------------------- | :------------------------- |
 | Management Fees | 0.00% bullion; 0.15% (PMGOLD) to 0.40% (GOLD) ETF | 0.00% explicit MER (bank margin in rate) | 0.05% p.a. MER (cut from 0.286% & 0.13%), in NAV |
 | Trading Costs | 2%--6% dealer spread vs tight ASX ETF spread | Zero brokerage; break fees on term deposits | One-off ASX brokerage & narrow bid-ask spread |
-| ATO Tax Rules | Tax-deferred; 50% CGT >12m; GST-free >=99.5% | Taxed yearly at full rate + 2% Medicare; no CGT discount | Annual AMIT income + franking; 50% CGT >12m |
-| Safety & Custody | Vault/insurance (~0.5%--1.0% p.a.) vs CHESS ETF | AUD 250k FCS guarantee; ~71% bonus miss rate (ACCC) | 200 ASX stocks in one trade; T+1/T+2 CHESS liquidity |
+| ATO Tax Rules | Tax-deferred; 50% CGT >12m; s 38-385 / s 40-100 no GST (>=99.5% Au) | Taxed yearly at full rate + 2% Medicare; no CGT discount | Annual AMIT income + franking; 50% CGT >12m |
+| Safety & Custody | Vault/insurance (~0.5%--1.0% p.a.) vs CHESS ETF | AUD 250k FCS guarantee; 71% bonus miss rate (ACCC 1H 2023) | 200 ASX stocks in one trade; T+1/T+2 CHESS liquidity |
 | Income & DRP | Zero cash flow; price appreciation compounds | Contractual compounding; zero price volatility | DRP compounds dividends; whole-unit rounding drags small sums |
 
 : Ownership comparison across Australian fees, tax rules, and friction.
@@ -1068,10 +1240,13 @@ Australian tax rules treat the three asset classes very differently:
 
 - **Gold:** Generates zero annual assessable distributions, deferring 100% of
   tax until sale, when Australian resident individuals holding longer than 12
-  months claim the **50% Capital Gains Tax (CGT) discount**. Under section
-  `38-385` of the *A New Tax System (Goods and Services Tax) Act 1999*,
-  investment-grade precious-metal bullion (purity `>= 99.5%`) is GST-exempt,
-  unlike numismatic or collectable coins.
+  months claim the **50% Capital Gains Tax (CGT) discount**. Under the *A New
+  Tax System (Goods and Services Tax) Act 1999* and ATO Ruling `GSTR 2003/10`,
+  section `38-385` makes only the *first* supply of precious metal after
+  refining **GST-free**, while subsequent supplies to retail investors are
+  **input taxed** under section `40-100` (so no GST applies at purchase) where
+  bullion meets statutory fineness thresholds (`>= 99.5%` for gold and
+  `>= 99.9%` for silver), unlike numismatic or collectable coins.
 - **Fixed Interest:** Every dollar of interest is taxed annually as ordinary
   assessable income at the saver's marginal rate. The Medicare levy may also
   apply, depending on taxable income and any available exemption or reduction,
@@ -1165,13 +1340,17 @@ Two striking numbers emerge from Table 4:
 Three practical quirks rarely appear in textbook backtests, yet dominate an
 everyday AUD 1,000 investor's experience:
 
-- **Bonus Savings Condition Risk (ACCC Finding):** Australian bank deposits
-  carry Federal Financial Claims Scheme (FCS) guarantees up to **AUD 250,000**
-  per account holder per Authorised Deposit-taking Institution (ADI). However,
-  the Australian Competition and Consumer Commission (ACCC) *Retail Deposits
-  Inquiry* found that roughly **71%** of bonus savings accounts fail to satisfy
-  monthly deposit or zero-withdrawal rules in a given month, dropping savers to
-  punitive base rates and making rate-chasing a recurring chore.
+- **Bonus Savings Condition Risk (`1H 2023` ACCC Snapshot):** Australian bank
+  deposits carry Federal Financial Claims Scheme (FCS) guarantees up to
+  **AUD 250,000** per account holder per Authorised Deposit-taking Institution
+  (ADI). However, the Australian Competition and Consumer Commission (ACCC)
+  *Retail Deposits Inquiry* (December 2023 final report) found that roughly
+  **71%** of bonus savings accounts failed to satisfy monthly deposit or
+  zero-withdrawal rules during a first-half 2023 (`1H 2023`) snapshot, dropping
+  savers to punitive base rates (`~0.05%--0.50%`). For a passive investor who
+  walks away without maintaining monthly hurdles, our `3.29%` p.a. bonus
+  rollover series is therefore an optimistic upper bound rather than an
+  effortless baseline.
 - **Whole-Unit DRP Drag on Small Equity Balances:** The theoretical equity
   total return reinvests every cent into fractional shares
   (`r fmt_num(wu_frac_units)` units worth **`r fmt_aud(wu_frac_end)`**). In
@@ -1188,20 +1367,28 @@ everyday AUD 1,000 investor's experience:
   up to `60` AMIT and CGT parcels.
 - **Gold's Income Silence:** Holding gold requires zero annual tax entries
   while prices fluctuate, but the investment yields no regular income stream,
-  forcing
-  investors seeking cash flow to sell ounces or ETF units piecemeal.
+  forcing investors seeking cash flow to sell ounces or ETF units piecemeal.
 
 ## Practical Takeaways
 
 Looking across twenty years of Australian data reinforces three balanced
 lessons rather than crowning a universal winner:
 
-- **End dates flatter momentum:** Spot gold won 2006--2026 decisively because
-  the window finishes near historic 2025--2026 central-bank highs; evaluating
-  the exact same rules in `2018` would have crowned `ASX:STW` Total Return.
-- **Exclude dividends and equities lose their purpose:** Without reinvested
-  distributions, `ASX:STW` trailed even retail savings and ABS CPI; dividend
-  imputation and patient reinvestment created nearly all equity outperformance.
+- **End dates flatter momentum:** Spot gold won 2006--2026
+  (**`r fmt_aud(gold_end)`** gross, or **`r fmt_aud(gold_015_end)`** to
+  **`r fmt_aud(gold_040_end)`** net of ETF fees) largely because the window
+  finishes near historic 2025--2026 central-bank highs; in `2018--2019`,
+  `ASX:STW` Total Return matched and briefly led spot gold--a near-tie before
+  gold's 2024--2026 breakout, echoed across 10-year rolling windows where
+  `ASX:STW` outperforms a `0.40%` MER Gold ETF in
+  `r fmt_pct(rw_10_net_stw_rate, 1L)` of start months.
+- **Headline price indices understate equity returns:** Financial media charts
+  often plot price-only indices (`r fmt_aud(stw_px_end)` on `ASX:STW`),
+  leaving out reinvested cash distributions and franking credits that
+  accounted for nearly four-fifths of `ASX:STW`'s total compounding
+  (**`r fmt_aud(stw_tr_end)`** pre-tax, or at least **`r fmt_aud(stw_32_nom)`**
+  after tax at `32%`) and pushed total equity wealth well past retail deposits
+  and ABS CPI.
 - **Match the asset to its role:** Fixed interest protects short-term capital
   at the price of real after-tax erosion over long horizons, whereas equities
   and gold harness long-term real compounding only if investors ride through
@@ -1211,7 +1398,8 @@ lessons rather than crowning a universal winner:
 
 Every figure in this report reproduces deterministically inside
 `scripts/model.R` from clean CSV extracts prepared in `data/`. Raw inputs and
-SHA-256 checksums remain archived in [the raw data source register][file-sources].
+SHA-256 checksums remain archived in [the raw data source
+register][file-sources].
 
 | Prepared CSV | Upstream Publisher & Series ID | Retrieved | Canonical Source |
 | :--- | :--- | :--- | :--- |

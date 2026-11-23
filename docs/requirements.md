@@ -46,8 +46,8 @@ analysis shall enforce the following asset definitions and fairness invariants:
   rate (`2006-07` through `2025-07`) across the 20 July-to-July terms
   (`fixed_interest_bonus`). Paired with RBA Table F4 **1-Year Term Deposit**
   (`FRDIRBTD10K1Y`, `fixed_interest_td_1y`) and RBA Table F1.1 (`f1.1-data.csv`,
-  `FIRMMCRT`) monthly-compounded cash-rate floor (`fixed_interest_cash`). The
-  ACCC Retail Deposits Inquiry caveat is evaluated in Section 6.
+  `FIRMMCRT`) monthly-compounded cash-rate benchmark (`fixed_interest_cash`).
+  The ACCC Retail Deposits Inquiry caveat is evaluated in Section 6.
 - **Australian Equities (`ASX:STW`):** State Street's SPDR S&P/ASX 200 Fund
   (`ASX:STW`), modelled on a **Total Return (Dividend Reinvestment Plan / DRP)**
   basis using actual historical cash distributions from
@@ -123,11 +123,14 @@ Key empirical observations from the initial data audit:
   sheet, `Gold`, daily-average spot / London PM fixing monthly average,
   integer USD values across 2006–2026) is a **monthly average** series rather
   than month-end. Retain it as a documented limitation and require `article.Rmd`
-  to state each series' timing basis explicitly: Gold (monthly average), RBA
-  `FXRUSD` (month-end), STW `Price` (monthly bar close, so July 2006 shows
-  Open `50.00` / Close `49.19` with entry/exit at month-end), RBA `FIRMMCRT`
-  (monthly average), Bonus Savings & 1-Year Term Deposit (`FRDIRSAB10K` /
-  `FRDIRBTD10K1Y`, monthly observations), and ABS CPI (quarterly index).
+  to state each series' timing basis explicitly and note that monthly averaging
+  reduces random-walk variance to roughly two-thirds of point-to-point variance
+  (meaning gold's `15.55%` annualised volatility corresponds to `~19%` on a
+  month-end basis): Gold (monthly average), RBA `FXRUSD` (month-end), STW
+  `Price` (monthly bar close, so July 2006 shows Open `50.00` / Close `49.19`
+  with entry/exit at month-end), RBA `FIRMMCRT` (monthly average), Bonus Savings
+  & 1-Year Term Deposit (`FRDIRSAB10K` / `FRDIRBTD10K1Y`, monthly observations),
+  and ABS CPI (quarterly index).
 - **Franking Verification:** `Gross_Distribution_AUD` in `stw-dividends.csv`
   matches `Cash_Distribution_AUD * (1 + Franking_Pct * 30 / 70)` at a 30%
   corporate rate to within `0.002`. Fourteen of 62 rows differ by more than
@@ -135,22 +138,24 @@ Key empirical observations from the initial data audit:
   the check shall use a tolerance and never exact equality. Cross-checking
   against State Street Global Advisors' (`SSGA`) official `ASX:STW` distribution
   table (`2014-06` to `2026-09`) confirms **46 / 46** exact matches on cash
-  distribution and payment date, while noting minor headline franking
-  variances across 17 rows (notably `2019-06-27`, shown as `0.00%` franking in
-  `stw-dividends.csv` versus `AUD 0.1923` per unit on SSGA).
+  distribution and payment date, while headline franking differs across
+  **17 / 46** checked rows (notably `2019-06-27`, shown as `0.00%` franking in
+  `stw-dividends.csv` versus `AUD 0.1923` per unit on SSGA) and the **14**
+  earlier in-window distributions (`2006–2013`) are not cross-checked against
+  SSGA—making Table 4's `ASX:STW` after-tax return a conservative lower bound.
 - **Bonus Savings & Term Deposit Audit (`f4-data.csv`):** Direct RBA Table F4
   supplies **250** gap-free monthly observations (`2006-01` to `2026-10`) for
   both `FRDIRSAB10K` (bonus savings) and `FRDIRBTD10K1Y` (1-year term deposit),
   allowing exact **July** start-of-term lock rates without annual averaging.
   `historical interest rates 2002-2026.docx` remains in `files/raw-data/` as
   read-only supporting provenance for the ACCC Retail Deposits Inquiry finding
-  (~71% of bonus savers miss monthly conditions).
+  (in a `1H 2023` snapshot, `71%` of bonus savers missed monthly conditions).
 - **CPI Inflation Audit (`g1-data.csv`):** Quarterly `GCPIAG` runs from
   `30/06/2006` (`59.65`) to `30/06/2026` (`102.31`), yielding **81** quarterly
   observations with zero missing values across the window (`+71.52%` cumulative
   inflation, `2.73%` p.a. CAGR; `AUD 1,000` in June 2006 requires `AUD 1,715.17`
   in June 2026 to maintain purchasing power).
-- **RBA Cash Rate Floor (`f1.1-data.csv`):** `FIRMMCRT` supplies **250**
+- **RBA Cash Rate Benchmark (`f1.1-data.csv`):** `FIRMMCRT` supplies **250**
   gap-free monthly observations from `2006-01` to `2026-10` (`2006-07` `5.75%`
   to `2026-07` `4.35%`). Monthly compounding yields **AUD 1,841.28** (`3.10%`
   p.a. CAGR), corroborating the July-locked Bonus Savings benchmark
@@ -393,8 +398,8 @@ align all series onto canonical monthly `YYYY-MM-01` dates from `2006-07-01` to
      `term_deposit_1y_rate_pct` (`FRDIRBTD10K1Y`, e.g. `5.40%` in `2006-07`
      through `3.60%` in `2025-07`), giving verified `2026-07` checkpoint
      **`AUD 2,032.98`** (`3.61%` p.a. nominal CAGR).
-   - Secondary RBA Cash Rate floor (`fixed_interest_cash`): monthly compounded
-     RBA Table F1.1 `cash_rate_pct` from `files/rba-cash-rate.csv`
+   - Secondary RBA Cash Rate benchmark (`fixed_interest_cash`): monthly
+     compounded RBA Table F1.1 `cash_rate_pct` from `files/rba-cash-rate.csv`
      (`V_t = V_{t-1} * (1 + cash_rate_{t-1} / 1200)`), with verified `2026-07`
      checkpoint **`AUD 1,841.28`** (`3.10%` p.a. CAGR).
 3. **Australian Equities (`ASX:STW` Price-Only & Cash DRP):**
@@ -436,6 +441,17 @@ align all series onto canonical monthly `YYYY-MM-01` dates from `2006-07-01` to
      (`30/06/2026`), giving an exact uninterpolated ratio of `1.71517` (so
      `AUD 1,715.17` nominal matches `AUD 1,000`). `article.Rmd` shall state
      this June-quarter CPI basis explicitly.
+5. **Rolling-Window Win Rates (`5`, `10`, and `15` Years):**
+   - For each horizon `h` in `c(5, 10, 15)` years (`m = 12 * h` months) and
+     every start index `i` in `1..(241 - m)` (`181` five-year, `121` ten-year,
+     and `61` fifteen-year overlapping windows), compute the window growth
+     multiplier `V_{i + m} / V_i` and annualised CAGR
+     `((V_{i + m} / V_i)^(1 / h) - 1) * 100` for `gold_aud`, `gold_etf_040`,
+     `stw_total_return`, and `fixed_interest_bonus`.
+   - Summarise each horizon's win count, win-rate share (`%` of windows won
+     among `gold_aud`, `stw_total_return`, and `fixed_interest_bonus`, plus a
+     net-of-MER comparison replacing `gold_aud` with `gold_etf_040`), median
+     CAGR, minimum CAGR, and maximum CAGR.
 
 ### REQ-011: In-Memory Data Contracts
 
@@ -469,6 +485,12 @@ and `files/historical-events.csv`.
      `max_drawdown_pct`, `end_value_real_aud`, `after_tax_32_nominal_aud`,
      `after_tax_32_real_aud`, `after_tax_39_nominal_aud`,
      `after_tax_39_real_aud`.
+5. **`rolling_window_summary`** (endpoint sensitivity across 5-, 10-, and
+   15-year sub-windows):
+   - Columns: `horizon_years` (`5`, `10`, `15`), `n_windows` (`181`, `121`,
+     `61`), `series_variant`, `win_count_gross`, `win_rate_gross_pct`,
+     `win_count_net`, `win_rate_net_pct`, `median_cagr_pct`, `min_cagr_pct`,
+     `max_cagr_pct`.
 
 ### REQ-012: Automated Data Integrity Assertions
 
@@ -562,9 +584,11 @@ and supporting prose examining ownership in Australia across three dimensions.
    - **Gold:** Produces no annual assessable income (100% tax-deferred growth
      until disposal). Eligible for the **50% Capital Gains Tax (CGT) discount**
      for Australian resident individuals holding longer than 12 months.
-     Investment-grade gold bullion (purity >= 99.5%) is **GST-exempt** under
-     s 38-385 of the *A New Tax System (Goods and Services Tax) Act 1999*,
-     unlike collectable or numismatic coins.
+     Under the *A New Tax System (Goods and Services Tax) Act 1999* and ATO
+     Ruling `GSTR 2003/10`, section `38-385` makes the first supply of precious
+     metal after refining **GST-free**, while subsequent supplies to investors
+     are **input taxed** under section `40-100` (for fineness `>= 99.5%` on gold
+     and `>= 99.9%` on silver), unlike collectable or numismatic coins.
    - **Fixed Interest:** Interest is taxed annually as ordinary assessable
      income at the investor's full marginal tax rate plus 2% Medicare levy, with
      **zero CGT discount**. Annual taxation creates compounding tax drag and
@@ -622,11 +646,11 @@ and supporting prose examining ownership in Australia across three dimensions.
 - **Fixed Interest:** Maximum capital stability, zero price volatility, and
   Australian Government Financial Claims Scheme (FCS) protection up to
   **AUD 250,000** per account holder per Authorised Deposit-taking Institution
-  (ADI). Trade-offs include **bonus-condition forfeiture risk** (as highlighted
-  by the ACCC Retail Deposits Inquiry, ~71% of bonus savings accounts fail to
-  meet monthly deposit or withdrawal conditions in a given month and revert to
-  a much lower base rate), reinvestment/rate-change risk, and manual
-  rate-shopping ("honeymoon rate" decay).
+  (ADI). Trade-offs include **bonus-condition forfeiture risk** (the ACCC
+  Retail Deposits Inquiry found in a first-half 2023 snapshot that `71%` of
+  bonus savings accounts failed to meet monthly deposit or withdrawal conditions
+  in a given month and reverted to a much lower base rate), reinvestment/rate-
+  change risk, and manual rate-shopping ("honeymoon rate" decay).
 - **Australian Equities (`ASX:STW`):** Single-trade diversification across 200
   ASX companies, high T+1/T+2 liquidity, and automated DRP compounding. Two
   practical caveats shall be emphasised explicitly for small balances:
@@ -673,8 +697,8 @@ or Excel and `files/raw-data/` reads, and renders four publication-quality
   - `Australian Equities (STW Price-Only)`: `#7f8c8d` (dashed line, size `0.7`)
   - `Gold (AUD Spot)`: `#c88a00` (solid line, size `0.95`)
   - `Fixed Interest (Bonus Savings, Annual Rollover)`: `#2e7d6b` (solid line,
-    size `0.95`; `fixed_interest_td_1y` as dashed `#2e7d6b` and Cash Rate floor
-    `fixed_interest_cash` as dotted `#2e7d6b`)
+    size `0.95`; `fixed_interest_td_1y` as dashed `#2e7d6b` and Cash Rate
+    benchmark `fixed_interest_cash` as dotted `#2e7d6b`)
 - **Monochrome Print Readability:** Combine distinct linetypes and direct
   end-of-series labels so charts remain legible under greyscale `@media print`
   styles in [article.css](article.css) and LaTeX PDF output.
